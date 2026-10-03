@@ -1,0 +1,240 @@
+
+
+######## ETAPA 3: INTEGRAÇÃO REST E REGRA DE NEGÓCIO ########
+
+# Estoque do Notebook (produto 1) antes
+
+$ curl -s http://localhost:8081/produtos/1 | json
+{
+  "id": 1,
+  "nome": "Notebook",
+  "quantidade": 10
+}
+
+
+# COM estoque: reservar -> criar pedido -> publicar evento. Resposta 201, status AGUARDANDO_PAGAMENTO
+
+$ criar_pedido 1 2
+HTTP/1.1 201 
+X-Correlation-Id: a1822da8-7c16-4889-9bd5-945d49d21a98
+Location: /pedidos/1
+Content-Type: application/json
+
+{"id":1,"produtoId":1,"quantidade":2,"status":"AGUARDANDO_PAGAMENTO","correlationId":"a1822da8-7c16-4889-9bd5-945d49d21a98","criadoEm":"2026-10-03T09:35:12.702889218-03:00","atualizadoEm":"2026-10-03T09:35:12.702889218-03:00"}
+
+
+$ curl -s http://localhost:8081/produtos/1 | json
+{
+  "id": 1,
+  "nome": "Notebook",
+  "quantidade": 8
+}
+
+
+# SEM estoque: não cria pedido, não publica evento, retorna erro (409 vindo do Estoque)
+
+$ sql_pedido 'select count(*) as pedidos from pedido'
+ pedidos 
+---------
+       1
+(1 row)
+
+
+
+$ sql_pedido 'select count(*) as eventos_outbox from outbox_evento'
+ eventos_outbox 
+----------------
+              1
+(1 row)
+
+
+
+$ criar_pedido 1 999
+HTTP/1.1 409 
+X-Correlation-Id: 47ca2fd9-8e0a-43c6-b09e-1d7328297540
+Content-Type: application/json
+
+{"mensagem":"Estoque insuficiente"}
+
+
+$ sql_pedido 'select count(*) as pedidos from pedido'
+ pedidos 
+---------
+       1
+(1 row)
+
+
+
+$ sql_pedido 'select count(*) as eventos_outbox from outbox_evento'
+ eventos_outbox 
+----------------
+              1
+(1 row)
+
+
+
+# Produto inexistente: 404, nenhum pedido criado
+
+$ criar_pedido 99 1
+HTTP/1.1 404 
+X-Correlation-Id: 281799bb-2a43-42b9-86bb-666ac6935f1b
+Content-Type: application/json
+
+{"mensagem":"Produto inexistente"}
+
+
+
+######## EXPERIMENTO DE CONSISTÊNCIA: FALHA APÓS A RESERVA E ANTES DA CRIAÇÃO DO PEDIDO ########
+
+# Cenário A: o processo do Pedido Service CAI (Runtime.halt) logo após a reserva
+
+$ curl -s http://localhost:8081/produtos/3 | json
+{
+  "id": 3,
+  "nome": "Teclado",
+  "quantidade": 20
+}
+
+
+$ sql_pedido 'select count(*) as pedidos from pedido'
+ pedidos 
+---------
+       1
+(1 row)
+
+
+
+$ criar_pedido 3 4 QUEDA_APOS_RESERVA; echo "(curl exit=$?: conexão encerrada sem resposta)"
+(curl exit=1: conexão encerrada sem resposta)
+
+
+# O Estoque foi debitado?
+
+$ curl -s http://localhost:8081/produtos/3 | json
+{
+  "id": 3,
+  "nome": "Teclado",
+  "quantidade": 16
+}
+
+
+# Reserva órfã no Estoque (correlationId 5ff59c73-3498-47f1-9029-95d9224e58e4)
+
+$ curl -s http://localhost:8081/reservas/5ff59c73-3498-47f1-9029-95d9224e58e4 | json
+{
+  "id": 3,
+  "correlationId": "5ff59c73-3498-47f1-9029-95d9224e58e4",
+  "produtoId": 3,
+  "quantidade": 4,
+  "status": "RESERVADA",
+  "criadaEm": "2026-10-03T09:35:14.728878-03:00",
+  "liberadaEm": null
+}
+
+
+# O pedido foi criado? (contagem e busca pelo correlationId)
+
+$ docker compose ps pedido-service
+NAME                                 IMAGE                              COMMAND                  SERVICE          CREATED          STATUS                            PORTS
+microservices-lab-pedido-service-1   microservices-lab-pedido-service   "java -jar /app/app.…"   pedido-service   35 seconds ago   Up 2 seconds (health: starting)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+
+pedido-service saudável
+
+$ sql_pedido "select count(*) as pedidos, count(*) filter (where correlation_id = '5ff59c73-3498-47f1-9029-95d9224e58e4') as pedidos_deste_cid from pedido"
+ pedidos | pedidos_deste_cid 
+---------+-------------------
+       1 |                 0
+(1 row)
+
+
+
+# Logs do incidente: o Estoque reservou e o Pedido morreu antes de gravar. Nenhuma compensação rodou.
+
+$ logs_por_correlation 5ff59c73-3498-47f1-9029-95d9224e58e4
+pedido-service-1     | 2026-10-03T12:35:14.718907658Z 2026-10-03 09:35:14.718 INFO  [nio-8080-exec-8] PedidoService            : correlationId=5ff59c73-3498-47f1-9029-95d9224e58e4 Requisição de pedido recebida (produto=3, quantidade=4)
+estoque-service-1    | 2026-10-03T12:35:14.731342244Z 2026-10-03 09:35:14.731 INFO  [nio-8080-exec-9] ReservaService           : correlationId=5ff59c73-3498-47f1-9029-95d9224e58e4 Produto 3 reservado (quantidade=4, disponivel=16)
+pedido-service-1     | 2026-10-03T12:35:14.736893634Z 2026-10-03 09:35:14.736 INFO  [nio-8080-exec-8] EstoqueClient            : correlationId=5ff59c73-3498-47f1-9029-95d9224e58e4 Estoque do produto 3 reservado via REST (quantidade=4)
+pedido-service-1     | 2026-10-03T12:35:14.736921306Z 2026-10-03 09:35:14.736 ERROR [nio-8080-exec-8] PedidoService            : correlationId=5ff59c73-3498-47f1-9029-95d9224e58e4 [SIMULAÇÃO] Queda do processo após a reserva e antes da criação do pedido
+
+
+$ docker compose logs --no-color pedido-service | grep -E 'exited|Started PedidoApplication' | tail -3
+pedido-service-1  | 2026-10-03 09:35:10.030 INFO  [           main] PedidoApplication        : Started PedidoApplication in 4.81 seconds (process running for 5.214)
+pedido-service-1  | 2026-10-03 09:35:20.901 INFO  [           main] PedidoApplication        : Started PedidoApplication in 4.921 seconds (process running for 5.282)
+
+
+# Compensação manual (o que uma Saga/reconciliação faria automaticamente): liberar a reserva órfã
+
+$ curl -s -X PUT http://localhost:8081/reservas/5ff59c73-3498-47f1-9029-95d9224e58e4/liberar | json
+{
+  "id": 3,
+  "correlationId": "5ff59c73-3498-47f1-9029-95d9224e58e4",
+  "produtoId": 3,
+  "quantidade": 4,
+  "status": "LIBERADA",
+  "criadaEm": "2026-10-03T09:35:14.728878-03:00",
+  "liberadaEm": "2026-10-03T09:35:23.930986734-03:00"
+}
+
+
+$ curl -s http://localhost:8081/produtos/3 | json
+{
+  "id": 3,
+  "nome": "Teclado",
+  "quantidade": 20
+}
+
+
+# Cenário B: ERRO (exceção) após a reserva. O processo segue vivo e executa a compensação.
+
+$ curl -s http://localhost:8081/produtos/3 | json
+{
+  "id": 3,
+  "nome": "Teclado",
+  "quantidade": 20
+}
+
+
+$ criar_pedido 3 4 ERRO_APOS_RESERVA
+HTTP/1.1 500 
+X-Correlation-Id: e86e9460-5f99-4531-9530-d9904ad3df40
+Content-Type: application/json
+
+{"mensagem":"Falha ao criar o pedido; a reserva de estoque foi desfeita"}
+
+$ curl -s http://localhost:8081/produtos/3 | json
+{
+  "id": 3,
+  "nome": "Teclado",
+  "quantidade": 20
+}
+
+
+$ curl -s http://localhost:8081/reservas/e86e9460-5f99-4531-9530-d9904ad3df40 | json
+{
+  "id": 4,
+  "correlationId": "e86e9460-5f99-4531-9530-d9904ad3df40",
+  "produtoId": 3,
+  "quantidade": 4,
+  "status": "LIBERADA",
+  "criadaEm": "2026-10-03T09:35:24.276023-03:00",
+  "liberadaEm": "2026-10-03T09:35:24.298705-03:00"
+}
+
+
+$ sql_pedido "select count(*) as pedidos_deste_cid from pedido where correlation_id = 'e86e9460-5f99-4531-9530-d9904ad3df40'"
+ pedidos_deste_cid 
+-------------------
+                 0
+(1 row)
+
+
+
+$ logs_por_correlation e86e9460-5f99-4531-9530-d9904ad3df40
+pedido-service-1     | 2026-10-03T12:35:24.223172354Z 2026-10-03 09:35:24.222 INFO  [nio-8080-exec-2] PedidoService            : correlationId=e86e9460-5f99-4531-9530-d9904ad3df40 Requisição de pedido recebida (produto=3, quantidade=4)
+estoque-service-1    | 2026-10-03T12:35:24.279087659Z 2026-10-03 09:35:24.278 INFO  [nio-8080-exec-1] ReservaService           : correlationId=e86e9460-5f99-4531-9530-d9904ad3df40 Produto 3 reservado (quantidade=4, disponivel=16)
+pedido-service-1     | 2026-10-03T12:35:24.294171048Z 2026-10-03 09:35:24.293 INFO  [nio-8080-exec-2] EstoqueClient            : correlationId=e86e9460-5f99-4531-9530-d9904ad3df40 Estoque do produto 3 reservado via REST (quantidade=4)
+pedido-service-1     | 2026-10-03T12:35:24.294316272Z 2026-10-03 09:35:24.294 WARN  [nio-8080-exec-2] PedidoService            : correlationId=e86e9460-5f99-4531-9530-d9904ad3df40 [SIMULAÇÃO] Erro após a reserva e antes da criação do pedido
+pedido-service-1     | 2026-10-03T12:35:24.294328235Z 2026-10-03 09:35:24.294 ERROR [nio-8080-exec-2] PedidoService            : correlationId=e86e9460-5f99-4531-9530-d9904ad3df40 Falha ao criar o pedido depois da reserva do estoque: Falha simulada após a reserva do estoque
+estoque-service-1    | 2026-10-03T12:35:24.301102916Z 2026-10-03 09:35:24.300 INFO  [nio-8080-exec-2] ReservaService           : correlationId=e86e9460-5f99-4531-9530-d9904ad3df40 Reserva liberada: produto 3 devolvido ao estoque (quantidade=4)
+pedido-service-1     | 2026-10-03T12:35:24.306573584Z 2026-10-03 09:35:24.306 INFO  [nio-8080-exec-2] PedidoService            : correlationId=e86e9460-5f99-4531-9530-d9904ad3df40 Compensação executada: reserva de estoque desfeita
+

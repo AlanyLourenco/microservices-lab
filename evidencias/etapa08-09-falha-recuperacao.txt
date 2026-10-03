@@ -1,0 +1,307 @@
+
+
+######## ETAPA 8: SIMULAÇÃO DE FALHA ########
+
+$ docker compose stop pagamento-service
+ Container microservices-lab-pagamento-service-1 Stopping 
+ Container microservices-lab-pagamento-service-1 Stopped 
+
+
+$ docker compose ps -a pagamento-service --format 'table {{.Name}}\t{{.State}}\t{{.Status}}'
+NAME                                    STATE     STATUS
+microservices-lab-pagamento-service-1   exited    Exited (143) Less than a second ago
+
+
+$ filas
+name                        messages_ready              messages_unacknowledged     consumers                   
+pagamento.processado        0                           0                           1                           
+pedido.criado.dlq           0                           0                           0                           
+pedido.criado               0                           0                           0                           
+pagamento.processado.dlq    0                           0                           0                           
+
+
+$ curl -s http://localhost:8081/produtos | json
+[
+  {
+    "id": 1,
+    "nome": "Notebook",
+    "quantidade": 8
+  },
+  {
+    "id": 2,
+    "nome": "Mouse",
+    "quantidade": 50
+  },
+  {
+    "id": 3,
+    "nome": "Teclado",
+    "quantidade": 20
+  }
+]
+
+
+# Criando pedidos com o Pagamento parado (do #3 ao #17)
+
+HTTP   ID     correlationId
+201 3 320a13a2-a931-42b0-b0f3-936fcf32dd3e
+201 4 90e1c88b-cc85-42db-bc6c-1f6607a43f8c
+201 5 b769870a-a054-49eb-a405-d9c21a5cf21d
+201 6 029c7e94-de9d-4d26-8719-b4cd122b8681
+201 7 d97c1d37-6dd0-4401-8537-2717a01c14b8
+201 8 e81bd6fc-0f6b-4184-b1b9-cca89c7329a3
+201 9 5d9559ab-7ac6-43ad-922b-79ac3d04e949
+201 10 6eb7323a-5695-411a-8c77-4e4a6301100d
+201 11 9be9d0a7-d803-4be2-82d9-8ab0b0cf3229
+201 12 4dc4794a-118a-4c15-9308-ddf5cdfd1e78
+201 13 18831191-653d-42f3-90a3-112838862745
+201 14 e7f3b091-6a0e-4d17-a0ac-7a393887e4bd
+201 15 a1f27a0c-c03a-4575-8cef-f835e5db48df
+201 16 41b2aa78-4f9a-426e-aab8-84c9712a5ad5
+201 17 1617fc6b-dd48-4f8f-8b07-8642f06953af
+
+# 1. O pedido foi criado? (todos AGUARDANDO_PAGAMENTO)
+
+$ curl -s http://localhost:8080/pedidos | python -c 'import json,sys; [print(p["id"], p["status"], p["correlationId"]) for p in json.load(sys.stdin) if p["id"] > 2]'
+3 AGUARDANDO_PAGAMENTO 320a13a2-a931-42b0-b0f3-936fcf32dd3e
+4 AGUARDANDO_PAGAMENTO 90e1c88b-cc85-42db-bc6c-1f6607a43f8c
+5 AGUARDANDO_PAGAMENTO b769870a-a054-49eb-a405-d9c21a5cf21d
+6 AGUARDANDO_PAGAMENTO 029c7e94-de9d-4d26-8719-b4cd122b8681
+7 AGUARDANDO_PAGAMENTO d97c1d37-6dd0-4401-8537-2717a01c14b8
+8 AGUARDANDO_PAGAMENTO e81bd6fc-0f6b-4184-b1b9-cca89c7329a3
+9 AGUARDANDO_PAGAMENTO 5d9559ab-7ac6-43ad-922b-79ac3d04e949
+10 AGUARDANDO_PAGAMENTO 6eb7323a-5695-411a-8c77-4e4a6301100d
+11 AGUARDANDO_PAGAMENTO 9be9d0a7-d803-4be2-82d9-8ab0b0cf3229
+12 AGUARDANDO_PAGAMENTO 4dc4794a-118a-4c15-9308-ddf5cdfd1e78
+13 AGUARDANDO_PAGAMENTO 18831191-653d-42f3-90a3-112838862745
+14 AGUARDANDO_PAGAMENTO e7f3b091-6a0e-4d17-a0ac-7a393887e4bd
+15 AGUARDANDO_PAGAMENTO a1f27a0c-c03a-4575-8cef-f835e5db48df
+16 AGUARDANDO_PAGAMENTO 41b2aa78-4f9a-426e-aab8-84c9712a5ad5
+17 AGUARDANDO_PAGAMENTO 1617fc6b-dd48-4f8f-8b07-8642f06953af
+
+
+# 2. O estoque foi atualizado?
+
+$ curl -s http://localhost:8081/produtos | json
+[
+  {
+    "id": 1,
+    "nome": "Notebook",
+    "quantidade": 8
+  },
+  {
+    "id": 2,
+    "nome": "Mouse",
+    "quantidade": 43
+  },
+  {
+    "id": 3,
+    "nome": "Teclado",
+    "quantidade": 12
+  }
+]
+
+
+# 3. O sistema inteiro parou? Pedido, Estoque e RabbitMQ seguem respondendo
+
+$ docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}'
+SERVICE           STATE     STATUS
+estoque-db        running   Up About a minute (healthy)
+estoque-service   running   Up About a minute (healthy)
+pagamento-db      running   Up About a minute (healthy)
+pedido-db         running   Up About a minute (healthy)
+pedido-service    running   Up 51 seconds (healthy)
+rabbitmq          running   Up About a minute (healthy)
+
+
+# 4. A mensagem foi perdida? Evidência na fila: mensagens PRONTAS, 0 consumidores
+
+$ filas
+name                        messages_ready              messages_unacknowledged     consumers                   
+pagamento.processado        0                           0                           1                           
+pedido.criado.dlq           0                           0                           0                           
+pedido.criado               15                          0                           0                           
+pagamento.processado.dlq    0                           0                           0                           
+
+
+# A mesma fila vista pela API de gerenciamento (a UI das telas). Ela atualiza as estatísticas a cada ~5 s, por isso a espera
+
+$ curl -s -u guest:guest http://localhost:15672/api/queues/%2F/pedido.criado | python -c 'import json,sys; q=json.load(sys.stdin); print({k: q.get(k) for k in ("name","durable","messages_ready","messages_unacknowledged","consumers")})'
+{'name': 'pedido.criado', 'durable': True, 'messages_ready': 15, 'messages_unacknowledged': 0, 'consumers': 0}
+
+
+# Evidência nos logs: o Pedido publicou (com confirmação do broker) cada evento
+
+$ docker compose logs --no-color pedido-service | grep 'Evento publicado' | tail -15
+pedido-service-1  | 2026-10-03 09:35:58.340 INFO  [   scheduling-1] OutboxRelay              : correlationId=320a13a2-a931-42b0-b0f3-936fcf32dd3e Evento publicado 3
+pedido-service-1  | 2026-10-03 09:35:58.354 INFO  [   scheduling-1] OutboxRelay              : correlationId=90e1c88b-cc85-42db-bc6c-1f6607a43f8c Evento publicado 4
+pedido-service-1  | 2026-10-03 09:35:58.871 INFO  [   scheduling-1] OutboxRelay              : correlationId=b769870a-a054-49eb-a405-d9c21a5cf21d Evento publicado 5
+pedido-service-1  | 2026-10-03 09:35:59.390 INFO  [   scheduling-1] OutboxRelay              : correlationId=029c7e94-de9d-4d26-8719-b4cd122b8681 Evento publicado 6
+pedido-service-1  | 2026-10-03 09:35:59.908 INFO  [   scheduling-1] OutboxRelay              : correlationId=d97c1d37-6dd0-4401-8537-2717a01c14b8 Evento publicado 7
+pedido-service-1  | 2026-10-03 09:35:59.926 INFO  [   scheduling-1] OutboxRelay              : correlationId=e81bd6fc-0f6b-4184-b1b9-cca89c7329a3 Evento publicado 8
+pedido-service-1  | 2026-10-03 09:36:00.445 INFO  [   scheduling-1] OutboxRelay              : correlationId=5d9559ab-7ac6-43ad-922b-79ac3d04e949 Evento publicado 9
+pedido-service-1  | 2026-10-03 09:36:00.963 INFO  [   scheduling-1] OutboxRelay              : correlationId=6eb7323a-5695-411a-8c77-4e4a6301100d Evento publicado 10
+pedido-service-1  | 2026-10-03 09:36:01.480 INFO  [   scheduling-1] OutboxRelay              : correlationId=9be9d0a7-d803-4be2-82d9-8ab0b0cf3229 Evento publicado 11
+pedido-service-1  | 2026-10-03 09:36:01.495 INFO  [   scheduling-1] OutboxRelay              : correlationId=4dc4794a-118a-4c15-9308-ddf5cdfd1e78 Evento publicado 12
+pedido-service-1  | 2026-10-03 09:36:02.012 INFO  [   scheduling-1] OutboxRelay              : correlationId=18831191-653d-42f3-90a3-112838862745 Evento publicado 13
+pedido-service-1  | 2026-10-03 09:36:02.528 INFO  [   scheduling-1] OutboxRelay              : correlationId=e7f3b091-6a0e-4d17-a0ac-7a393887e4bd Evento publicado 14
+pedido-service-1  | 2026-10-03 09:36:02.543 INFO  [   scheduling-1] OutboxRelay              : correlationId=a1f27a0c-c03a-4575-8cef-f835e5db48df Evento publicado 15
+pedido-service-1  | 2026-10-03 09:36:03.062 INFO  [   scheduling-1] OutboxRelay              : correlationId=41b2aa78-4f9a-426e-aab8-84c9712a5ad5 Evento publicado 16
+pedido-service-1  | 2026-10-03 09:36:03.582 INFO  [   scheduling-1] OutboxRelay              : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento publicado 17
+
+
+# Pedido #17 durante a falha (o 'incidente' investigado na Etapa 11)
+
+$ curl -s http://localhost:8080/pedidos/17 | json
+{
+  "id": 17,
+  "produtoId": 3,
+  "quantidade": 1,
+  "status": "AGUARDANDO_PAGAMENTO",
+  "correlationId": "1617fc6b-dd48-4f8f-8b07-8642f06953af",
+  "criadoEm": "2026-10-03T09:36:03.097977-03:00",
+  "atualizadoEm": "2026-10-03T09:36:03.097977-03:00"
+}
+
+
+# Espiando a mensagem do #17 na fila sem consumi-la (ackmode=ack_requeue_true)
+
+$ curl -s -u guest:guest -H 'content-type: application/json' -X POST http://localhost:15672/api/queues/%2F/pedido.criado/get -d '{"count": 50, "ackmode": "ack_requeue_true", "encoding": "auto"}' | python -c 'import json,sys; [print(m["payload"], "| props:", {k: m["properties"].get(k) for k in ("delivery_mode","correlation_id","message_id")}) for m in json.load(sys.stdin) if "\"pedidoId\":17," in m["payload"]]'
+{"pedidoId":17,"produtoId":3,"quantidade":1,"correlationId":"1617fc6b-dd48-4f8f-8b07-8642f06953af"} | props: {'delivery_mode': 2, 'correlation_id': '1617fc6b-dd48-4f8f-8b07-8642f06953af', 'message_id': 'pedido.criado-17'}
+
+
+$ filas
+name                        messages_ready              messages_unacknowledged     consumers                   
+pagamento.processado        0                           0                           1                           
+pedido.criado.dlq           0                           0                           0                           
+pedido.criado               15                          0                           0                           
+pagamento.processado.dlq    0                           0                           0                           
+
+
+
+######## ETAPA 9: RECUPERAÇÃO ########
+
+# 1. As mensagens geradas durante a indisponibilidade continuam na fila?
+
+$ filas
+name                        messages_ready              messages_unacknowledged     consumers                   
+pagamento.processado        0                           0                           1                           
+pedido.criado.dlq           0                           0                           0                           
+pedido.criado               15                          0                           0                           
+pagamento.processado.dlq    0                           0                           0                           
+
+
+# 2. Iniciando novamente o Pagamento Service
+
+$ docker compose start pagamento-service
+ Container microservices-lab-pagamento-db-1 Waiting 
+ Container microservices-lab-rabbitmq-1 Waiting 
+ Container microservices-lab-rabbitmq-1 Healthy 
+ Container microservices-lab-pagamento-db-1 Healthy 
+ Container microservices-lab-pagamento-service-1 Starting 
+ Container microservices-lab-pagamento-service-1 Started 
+
+pagamento-service saudável
+
+# 3. As mensagens pendentes foram consumidas?
+
+$ filas
+name                        messages_ready              messages_unacknowledged     consumers                   
+pagamento.processado        0                           0                           1                           
+pedido.criado.dlq           0                           0                           0                           
+pedido.criado               0                           0                           1                           
+pagamento.processado.dlq    0                           0                           0                           
+
+
+# Logs do Pagamento após o reinício (desde 2026-10-03T12:36:15Z)
+
+$ docker compose logs --no-color --since 2026-10-03T12:36:15Z pagamento-service | grep -E 'recebido|aprovado|rejeitado|publicado'
+pagamento-service-1  | 2026-10-03 09:36:21.706 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=320a13a2-a931-42b0-b0f3-936fcf32dd3e Evento pedido.criado recebido: pedido 3 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:22.361 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=320a13a2-a931-42b0-b0f3-936fcf32dd3e Pagamento aprovado 3
+pagamento-service-1  | 2026-10-03 09:36:22.377 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=320a13a2-a931-42b0-b0f3-936fcf32dd3e Evento pagamento.processado publicado 3 (APROVADO)
+pagamento-service-1  | 2026-10-03 09:36:22.380 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=90e1c88b-cc85-42db-bc6c-1f6607a43f8c Evento pedido.criado recebido: pedido 4 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:22.891 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=90e1c88b-cc85-42db-bc6c-1f6607a43f8c Pagamento aprovado 4
+pagamento-service-1  | 2026-10-03 09:36:22.898 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=90e1c88b-cc85-42db-bc6c-1f6607a43f8c Evento pagamento.processado publicado 4 (APROVADO)
+pagamento-service-1  | 2026-10-03 09:36:22.900 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=b769870a-a054-49eb-a405-d9c21a5cf21d Evento pedido.criado recebido: pedido 5 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:23.413 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=b769870a-a054-49eb-a405-d9c21a5cf21d Pagamento aprovado 5
+pagamento-service-1  | 2026-10-03 09:36:23.421 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=b769870a-a054-49eb-a405-d9c21a5cf21d Evento pagamento.processado publicado 5 (APROVADO)
+pagamento-service-1  | 2026-10-03 09:36:23.422 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=029c7e94-de9d-4d26-8719-b4cd122b8681 Evento pedido.criado recebido: pedido 6 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:23.934 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=029c7e94-de9d-4d26-8719-b4cd122b8681 Pagamento aprovado 6
+pagamento-service-1  | 2026-10-03 09:36:23.942 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=029c7e94-de9d-4d26-8719-b4cd122b8681 Evento pagamento.processado publicado 6 (APROVADO)
+pagamento-service-1  | 2026-10-03 09:36:23.944 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=d97c1d37-6dd0-4401-8537-2717a01c14b8 Evento pedido.criado recebido: pedido 7 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:24.452 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=d97c1d37-6dd0-4401-8537-2717a01c14b8 Pagamento aprovado 7
+pagamento-service-1  | 2026-10-03 09:36:24.458 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=d97c1d37-6dd0-4401-8537-2717a01c14b8 Evento pagamento.processado publicado 7 (APROVADO)
+pagamento-service-1  | 2026-10-03 09:36:24.460 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=e81bd6fc-0f6b-4184-b1b9-cca89c7329a3 Evento pedido.criado recebido: pedido 8 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:24.974 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=e81bd6fc-0f6b-4184-b1b9-cca89c7329a3 Pagamento aprovado 8
+pagamento-service-1  | 2026-10-03 09:36:24.984 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=e81bd6fc-0f6b-4184-b1b9-cca89c7329a3 Evento pagamento.processado publicado 8 (APROVADO)
+pagamento-service-1  | 2026-10-03 09:36:24.988 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=5d9559ab-7ac6-43ad-922b-79ac3d04e949 Evento pedido.criado recebido: pedido 9 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:25.500 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=5d9559ab-7ac6-43ad-922b-79ac3d04e949 Pagamento rejeitado 9
+pagamento-service-1  | 2026-10-03 09:36:25.508 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=5d9559ab-7ac6-43ad-922b-79ac3d04e949 Evento pagamento.processado publicado 9 (REJEITADO)
+pagamento-service-1  | 2026-10-03 09:36:25.510 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=6eb7323a-5695-411a-8c77-4e4a6301100d Evento pedido.criado recebido: pedido 10 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:26.018 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=6eb7323a-5695-411a-8c77-4e4a6301100d Pagamento rejeitado 10
+pagamento-service-1  | 2026-10-03 09:36:26.026 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=6eb7323a-5695-411a-8c77-4e4a6301100d Evento pagamento.processado publicado 10 (REJEITADO)
+pagamento-service-1  | 2026-10-03 09:36:26.028 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=9be9d0a7-d803-4be2-82d9-8ab0b0cf3229 Evento pedido.criado recebido: pedido 11 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:26.541 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=9be9d0a7-d803-4be2-82d9-8ab0b0cf3229 Pagamento aprovado 11
+pagamento-service-1  | 2026-10-03 09:36:26.549 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=9be9d0a7-d803-4be2-82d9-8ab0b0cf3229 Evento pagamento.processado publicado 11 (APROVADO)
+pagamento-service-1  | 2026-10-03 09:36:26.550 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=4dc4794a-118a-4c15-9308-ddf5cdfd1e78 Evento pedido.criado recebido: pedido 12 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:27.061 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=4dc4794a-118a-4c15-9308-ddf5cdfd1e78 Pagamento aprovado 12
+pagamento-service-1  | 2026-10-03 09:36:27.068 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=4dc4794a-118a-4c15-9308-ddf5cdfd1e78 Evento pagamento.processado publicado 12 (APROVADO)
+pagamento-service-1  | 2026-10-03 09:36:27.070 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=18831191-653d-42f3-90a3-112838862745 Evento pedido.criado recebido: pedido 13 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:27.584 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=18831191-653d-42f3-90a3-112838862745 Pagamento rejeitado 13
+pagamento-service-1  | 2026-10-03 09:36:27.591 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=18831191-653d-42f3-90a3-112838862745 Evento pagamento.processado publicado 13 (REJEITADO)
+pagamento-service-1  | 2026-10-03 09:36:27.592 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=e7f3b091-6a0e-4d17-a0ac-7a393887e4bd Evento pedido.criado recebido: pedido 14 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:28.118 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=e7f3b091-6a0e-4d17-a0ac-7a393887e4bd Pagamento aprovado 14
+pagamento-service-1  | 2026-10-03 09:36:28.126 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=e7f3b091-6a0e-4d17-a0ac-7a393887e4bd Evento pagamento.processado publicado 14 (APROVADO)
+pagamento-service-1  | 2026-10-03 09:36:28.128 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=a1f27a0c-c03a-4575-8cef-f835e5db48df Evento pedido.criado recebido: pedido 15 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:28.637 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=a1f27a0c-c03a-4575-8cef-f835e5db48df Pagamento rejeitado 15
+pagamento-service-1  | 2026-10-03 09:36:28.643 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=a1f27a0c-c03a-4575-8cef-f835e5db48df Evento pagamento.processado publicado 15 (REJEITADO)
+pagamento-service-1  | 2026-10-03 09:36:28.644 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=41b2aa78-4f9a-426e-aab8-84c9712a5ad5 Evento pedido.criado recebido: pedido 16 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:29.157 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=41b2aa78-4f9a-426e-aab8-84c9712a5ad5 Pagamento rejeitado 16
+pagamento-service-1  | 2026-10-03 09:36:29.164 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=41b2aa78-4f9a-426e-aab8-84c9712a5ad5 Evento pagamento.processado publicado 16 (REJEITADO)
+pagamento-service-1  | 2026-10-03 09:36:29.165 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento pedido.criado recebido: pedido 17 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03 09:36:29.679 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Pagamento aprovado 17
+pagamento-service-1  | 2026-10-03 09:36:29.687 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento pagamento.processado publicado 17 (APROVADO)
+
+
+# 4. Cada pedido foi processado?
+
+$ curl -s http://localhost:8080/pedidos | python -c 'import json,sys; [print(p["id"], p["status"], p["atualizadoEm"]) for p in json.load(sys.stdin) if p["id"] > 2]'
+3 PAGO 2026-10-03T09:36:22.371814-03:00
+4 PAGO 2026-10-03T09:36:22.897068-03:00
+5 PAGO 2026-10-03T09:36:23.419187-03:00
+6 PAGO 2026-10-03T09:36:23.941099-03:00
+7 PAGO 2026-10-03T09:36:24.457118-03:00
+8 PAGO 2026-10-03T09:36:24.988657-03:00
+9 REJEITADO 2026-10-03T09:36:25.520796-03:00
+10 REJEITADO 2026-10-03T09:36:26.037417-03:00
+11 PAGO 2026-10-03T09:36:26.547168-03:00
+12 PAGO 2026-10-03T09:36:27.066603-03:00
+13 REJEITADO 2026-10-03T09:36:27.60413-03:00
+14 PAGO 2026-10-03T09:36:28.125012-03:00
+15 REJEITADO 2026-10-03T09:36:28.655548-03:00
+16 REJEITADO 2026-10-03T09:36:29.177653-03:00
+17 PAGO 2026-10-03T09:36:29.686159-03:00
+
+
+# 5. Registros no banco do Pagamento Service
+
+$ sql_pagamento "select id, pedido_id, status, instancia, processado_em from pagamento where pedido_id > 2 order by pedido_id"
+ id | pedido_id |  status   |  instancia   |         processado_em         
+----+-----------+-----------+--------------+-------------------------------
+  3 |         3 | APROVADO  | 9d5f8ffd3f8a | 2026-10-03 12:36:22.31348+00
+  4 |         4 | APROVADO  | 9d5f8ffd3f8a | 2026-10-03 12:36:22.884896+00
+  5 |         5 | APROVADO  | 9d5f8ffd3f8a | 2026-10-03 12:36:23.406506+00
+  6 |         6 | APROVADO  | 9d5f8ffd3f8a | 2026-10-03 12:36:23.927641+00
+  7 |         7 | APROVADO  | 9d5f8ffd3f8a | 2026-10-03 12:36:24.447845+00
+  8 |         8 | APROVADO  | 9d5f8ffd3f8a | 2026-10-03 12:36:24.966528+00
+  9 |         9 | REJEITADO | 9d5f8ffd3f8a | 2026-10-03 12:36:25.494045+00
+ 10 |        10 | REJEITADO | 9d5f8ffd3f8a | 2026-10-03 12:36:26.013659+00
+ 11 |        11 | APROVADO  | 9d5f8ffd3f8a | 2026-10-03 12:36:26.534538+00
+ 12 |        12 | APROVADO  | 9d5f8ffd3f8a | 2026-10-03 12:36:27.054625+00
+ 13 |        13 | REJEITADO | 9d5f8ffd3f8a | 2026-10-03 12:36:27.576556+00
+ 14 |        14 | APROVADO  | 9d5f8ffd3f8a | 2026-10-03 12:36:28.097244+00
+ 15 |        15 | REJEITADO | 9d5f8ffd3f8a | 2026-10-03 12:36:28.632451+00
+ 16 |        16 | REJEITADO | 9d5f8ffd3f8a | 2026-10-03 12:36:29.15085+00
+ 17 |        17 | APROVADO  | 9d5f8ffd3f8a | 2026-10-03 12:36:29.672153+00
+(15 rows)
+
+

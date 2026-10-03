@@ -1,0 +1,41 @@
+
+
+######## ETAPA 5: RABBITMQ ########
+
+# Exchanges (pedidos.exchange e pagamentos.exchange do tipo topic; lab.dlx para mensagens mortas)
+
+$ docker compose exec -T rabbitmq rabbitmqctl list_exchanges -q name type durable | grep -E 'pedidos|pagamentos|lab.dlx'
+lab.dlx	direct	true
+pedidos.exchange	topic	true
+pagamentos.exchange	topic	true
+
+
+# Filas: mensagens prontas, não confirmadas e consumidores
+
+$ filas
+name                        messages_ready              messages_unacknowledged     consumers                   
+pagamento.processado        0                           0                           1                           
+pedido.criado.dlq           0                           0                           0                           
+pedido.criado               0                           0                           1                           
+pagamento.processado.dlq    0                           0                           0                           
+
+
+# Bindings: pedidos.exchange --pedido.criado--> fila pedido.criado
+
+$ docker compose exec -T rabbitmq rabbitmqctl list_bindings -q source_name destination_name routing_key | grep -v '^\s'
+source_name	destination_name	routing_key
+lab.dlx	pagamento.processado.dlq	pagamento.processado.dlq
+lab.dlx	pedido.criado.dlq	pedido.criado.dlq
+pagamentos.exchange	pagamento.processado	pagamento.processado
+pedidos.exchange	pedido.criado	pedido.criado
+
+
+# Consumidores conectados
+
+$ docker compose exec -T rabbitmq rabbitmqctl list_consumers -q queue_name channel_pid ack_required prefetch_count
+queue_name	channel_pid	ack_required	prefetch_count
+pagamento.processado	<rabbit@rabbitmq.1791030886.942.0>	true	1
+pedido.criado	<rabbit@rabbitmq.1791030886.866.0>	true	1
+
+
+# Interface de gerenciamento: http://localhost:15672 (guest/guest)

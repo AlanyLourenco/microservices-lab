@@ -1,0 +1,115 @@
+
+
+######## ETAPA 4: DOCKER COMPOSE ########
+
+$ docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}\t{{.Ports}}'
+SERVICE             STATE     STATUS                             PORTS
+estoque-db          running   Up 42 seconds (healthy)            5432/tcp
+estoque-service     running   Up 31 seconds (healthy)            0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp
+pagamento-db        running   Up 41 seconds (healthy)            5432/tcp
+pagamento-service   running   Up 31 seconds (healthy)            8080/tcp
+pedido-db           running   Up 42 seconds (healthy)            5432/tcp
+pedido-service      running   Up 10 seconds (health: starting)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+rabbitmq            running   Up 42 seconds (healthy)            0.0.0.0:5672->5672/tcp, [::]:5672->5672/tcp, 0.0.0.0:15672->15672/tcp, [::]:15672->15672/tcp
+
+
+# Logs confirmando que os serviços subiram
+
+$ docker compose logs --no-color estoque-service pedido-service pagamento-service | grep -E 'Started .*Application|Successfully applied|Schema .* is up to date'
+estoque-service-1    | 2026-10-03 09:34:57.103 INFO  [           main] DbMigrate                : Successfully applied 2 migrations to schema "public", now at version v2 (execution time 00:00.026s)
+pedido-service-1     | 2026-10-03 09:35:07.627 INFO  [           main] DbMigrate                : Successfully applied 2 migrations to schema "public", now at version v2 (execution time 00:00.034s)
+pagamento-service-1  | 2026-10-03 09:34:57.497 INFO  [           main] DbMigrate                : Successfully applied 1 migration to schema "public", now at version v1 (execution time 00:00.017s)
+estoque-service-1    | 2026-10-03 09:34:59.728 INFO  [           main] EstoqueApplication       : Started EstoqueApplication in 5.193 seconds (process running for 5.619)
+pedido-service-1     | 2026-10-03 09:35:10.030 INFO  [           main] PedidoApplication        : Started PedidoApplication in 4.81 seconds (process running for 5.214)
+pagamento-service-1  | 2026-10-03 09:35:00.201 INFO  [           main] PagamentoApplication     : Started PagamentoApplication in 5.38 seconds (process running for 5.765)
+pedido-service-1     | 2026-10-03 09:35:18.465 INFO  [           main] DbMigrate                : Schema "public" is up to date. No migration necessary.
+pedido-service-1     | 2026-10-03 09:35:20.901 INFO  [           main] PedidoApplication        : Started PedidoApplication in 4.921 seconds (process running for 5.282)
+
+
+# Pedido consegue acessar Estoque? Chamada REST de dentro do contêiner do Pedido, pelo nome do serviço
+
+$ docker compose exec -T pedido-service curl -s -w '\nHTTP %{http_code}\n' http://estoque-service:8080/produtos
+[{"id":1,"nome":"Notebook","quantidade":8},{"id":2,"nome":"Mouse","quantidade":50},{"id":3,"nome":"Teclado","quantidade":20}]
+HTTP 200
+
+
+
+######## BANCO POR SERVIÇO: ISOLAMENTO DEMONSTRADO ########
+
+# Cada serviço resolve o nome do PRÓPRIO banco...
+
+$ docker compose exec -T estoque-service getent hosts estoque-db
+172.19.0.2      estoque-db
+
+
+$ docker compose exec -T pedido-service getent hosts pedido-db
+172.20.0.2      pedido-db
+
+
+$ docker compose exec -T pagamento-service getent hosts pagamento-db
+172.21.0.2      pagamento-db
+
+
+# ...mas o Pedido não alcança o banco do Estoque, e o Pagamento não alcança o banco do Pedido (redes distintas)
+
+$ docker compose exec -T pedido-service getent hosts estoque-db; echo "exit=$? (2 = nome não encontrado)"
+exit=2 (2 = nome não encontrado)
+
+
+$ docker compose exec -T pedido-service curl -s --max-time 3 telnet://estoque-db:5432; echo "curl exit=$? (6 = host não resolvido; 28 = 3 s sem conectar; nos dois casos, sem acesso)"
+curl exit=28 (6 = host não resolvido; 28 = 3 s sem conectar; nos dois casos, sem acesso)
+
+
+$ docker compose exec -T pagamento-service getent hosts pedido-db; echo "exit=$? (2 = nome não encontrado)"
+exit=2 (2 = nome não encontrado)
+
+
+$ docker compose exec -T pagamento-service curl -s --max-time 3 telnet://pedido-db:5432; echo "curl exit=$? (6 = host não resolvido; 28 = 3 s sem conectar; nos dois casos, sem acesso)"
+curl exit=28 (6 = host não resolvido; 28 = 3 s sem conectar; nos dois casos, sem acesso)
+
+
+# Redes de cada contêiner
+
+$ for c in $(docker compose ps -q); do docker inspect -f '{{.Name}} -> {{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' $c; done
+/microservices-lab-estoque-db-1 -> microservices-lab_estoque-net 
+/microservices-lab-estoque-service-1 -> microservices-lab_backend microservices-lab_estoque-net 
+/microservices-lab-pagamento-db-1 -> microservices-lab_pagamento-net 
+/microservices-lab-pagamento-service-1 -> microservices-lab_backend microservices-lab_pagamento-net 
+/microservices-lab-pedido-db-1 -> microservices-lab_pedido-net 
+/microservices-lab-pedido-service-1 -> microservices-lab_backend microservices-lab_pedido-net 
+/microservices-lab-rabbitmq-1 -> microservices-lab_backend 
+
+
+# Bancos distintos: cada um com as próprias tabelas
+
+$ sql_estoque '\dt'
+                List of relations
+ Schema |         Name          | Type  |  Owner  
+--------+-----------------------+-------+---------
+ public | flyway_schema_history | table | estoque
+ public | produto               | table | estoque
+ public | reserva               | table | estoque
+(3 rows)
+
+
+
+$ sql_pedido '\dt'
+                List of relations
+ Schema |         Name          | Type  | Owner  
+--------+-----------------------+-------+--------
+ public | flyway_schema_history | table | pedido
+ public | outbox_evento         | table | pedido
+ public | pedido                | table | pedido
+(3 rows)
+
+
+
+$ sql_pagamento '\dt'
+                 List of relations
+ Schema |         Name          | Type  |   Owner   
+--------+-----------------------+-------+-----------
+ public | flyway_schema_history | table | pagamento
+ public | pagamento             | table | pagamento
+(2 rows)
+
+

@@ -1,0 +1,47 @@
+# Build (Maven)
+target/
+*.class
+*.jar
+*.war
+
+# Segredos e configuração local: nunca versionar
+.env
+.env.*
+*.local
+*.local.*
+application-local.yml
+application-local.properties
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+credentials*
+secrets*
+
+# Notas e configuração da máquina local (caminhos, hardware, ferramentas de IA)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+
+# IDEs e editores
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+*.swp
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python (gerador do documento)
+__pycache__/
+*.pyc
+.venv/
+
+# Logs avulsos (as evidências oficiais ficam em evidencias/)
+*.log

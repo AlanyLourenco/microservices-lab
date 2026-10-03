@@ -1,0 +1,116 @@
+
+
+######## ETAPA 11: INVESTIGAÇÃO DO PEDIDO #17 ########
+
+# Ponto de partida: o pedidoId informado pelo usuário. O Pedido Service devolve o correlationId.
+
+$ curl -s http://localhost:8080/pedidos/17 | json
+{
+  "id": 17,
+  "produtoId": 3,
+  "quantidade": 1,
+  "status": "PAGO",
+  "correlationId": "1617fc6b-dd48-4f8f-8b07-8642f06953af",
+  "criadoEm": "2026-10-03T09:36:03.097977-03:00",
+  "atualizadoEm": "2026-10-03T09:36:29.686159-03:00"
+}
+
+
+# 1. O pedido foi criado?
+
+$ docker compose logs --no-color --timestamps pedido-service | grep -F "correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af" | grep -E 'recebida|criado'
+pedido-service-1  | 2026-10-03T12:36:03.080526994Z 2026-10-03 09:36:03.080 INFO  [nio-8080-exec-4] PedidoService            : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Requisição de pedido recebida (produto=3, quantidade=1)
+pedido-service-1  | 2026-10-03T12:36:03.100659814Z 2026-10-03 09:36:03.100 INFO  [nio-8080-exec-4] RegistroPedido           : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento pedido.criado do pedido 17 registrado na outbox
+pedido-service-1  | 2026-10-03T12:36:03.105531310Z 2026-10-03 09:36:03.105 INFO  [nio-8080-exec-4] PedidoService            : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Pedido 17 criado
+
+
+# 2. O estoque foi reservado?
+
+$ docker compose logs --no-color --timestamps estoque-service | grep -F "correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af"
+estoque-service-1  | 2026-10-03T12:36:03.089219552Z 2026-10-03 09:36:03.088 INFO  [nio-8080-exec-5] ReservaService           : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Produto 3 reservado (quantidade=1, disponivel=12)
+
+
+$ curl -s http://localhost:8081/reservas/1617fc6b-dd48-4f8f-8b07-8642f06953af | json
+{
+  "id": 20,
+  "correlationId": "1617fc6b-dd48-4f8f-8b07-8642f06953af",
+  "produtoId": 3,
+  "quantidade": 1,
+  "status": "RESERVADA",
+  "criadaEm": "2026-10-03T09:36:03.087201-03:00",
+  "liberadaEm": null
+}
+
+
+# 3. O evento pedido.criado foi publicado?
+
+$ docker compose logs --no-color --timestamps pedido-service | grep -F "correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af" | grep -E 'outbox|Evento publicado'
+pedido-service-1  | 2026-10-03T12:36:03.100659814Z 2026-10-03 09:36:03.100 INFO  [nio-8080-exec-4] RegistroPedido           : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento pedido.criado do pedido 17 registrado na outbox
+pedido-service-1  | 2026-10-03T12:36:03.582578862Z 2026-10-03 09:36:03.582 INFO  [   scheduling-1] OutboxRelay              : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento publicado 17
+
+
+$ sql_pedido "select id, pedido_id, status, tentativas, criado_em, publicado_em from outbox_evento where pedido_id = 17"
+ id | pedido_id |  status   | tentativas |           criado_em           |         publicado_em          
+----+-----------+-----------+------------+-------------------------------+-------------------------------
+ 17 |        17 | PUBLICADO |          1 | 2026-10-03 12:36:03.099379+00 | 2026-10-03 12:36:03.581553+00
+(1 row)
+
+
+
+# 4. O Pagamento Service recebeu o evento?  5. O pagamento foi processado?
+
+$ docker compose logs --no-color --timestamps pagamento-service | grep -F "correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af"
+pagamento-service-1  | 2026-10-03T12:36:29.166307746Z 2026-10-03 09:36:29.165 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento pedido.criado recebido: pedido 17 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03T12:36:29.680224429Z 2026-10-03 09:36:29.679 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Pagamento aprovado 17
+pagamento-service-1  | 2026-10-03T12:36:29.687379177Z 2026-10-03 09:36:29.687 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento pagamento.processado publicado 17 (APROVADO)
+
+
+$ sql_pagamento "select * from pagamento where pedido_id = 17"
+ id | pedido_id |  status  |            correlation_id            |  instancia   |         processado_em         
+----+-----------+----------+--------------------------------------+--------------+-------------------------------
+ 17 |        17 | APROVADO | 1617fc6b-dd48-4f8f-8b07-8642f06953af | 9d5f8ffd3f8a | 2026-10-03 12:36:29.672153+00
+(1 row)
+
+
+
+# Retorno do resultado ao Pedido (Etapa 12)
+
+$ docker compose logs --no-color --timestamps pedido-service | grep -F "correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af" | grep -E 'pagamento.processado|atualizado|liberada'
+pedido-service-1  | 2026-10-03T12:36:29.683410989Z 2026-10-03 09:36:29.683 INFO  [ntContainer#0-1] amentoProcessadoListener : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento pagamento.processado recebido: pedido 17 status APROVADO
+pedido-service-1  | 2026-10-03T12:36:29.691901070Z 2026-10-03 09:36:29.691 INFO  [ntContainer#0-1] PedidoService            : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Pedido 17 atualizado para PAGO
+
+
+# Linha do tempo completa (três serviços, ordenada pelo horário)
+
+$ logs_por_correlation 1617fc6b-dd48-4f8f-8b07-8642f06953af
+pedido-service-1     | 2026-10-03T12:36:03.080526994Z 2026-10-03 09:36:03.080 INFO  [nio-8080-exec-4] PedidoService            : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Requisição de pedido recebida (produto=3, quantidade=1)
+estoque-service-1    | 2026-10-03T12:36:03.089219552Z 2026-10-03 09:36:03.088 INFO  [nio-8080-exec-5] ReservaService           : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Produto 3 reservado (quantidade=1, disponivel=12)
+pedido-service-1     | 2026-10-03T12:36:03.096954265Z 2026-10-03 09:36:03.096 INFO  [nio-8080-exec-4] EstoqueClient            : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Estoque do produto 3 reservado via REST (quantidade=1)
+pedido-service-1     | 2026-10-03T12:36:03.100659814Z 2026-10-03 09:36:03.100 INFO  [nio-8080-exec-4] RegistroPedido           : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento pedido.criado do pedido 17 registrado na outbox
+pedido-service-1     | 2026-10-03T12:36:03.105531310Z 2026-10-03 09:36:03.105 INFO  [nio-8080-exec-4] PedidoService            : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Pedido 17 criado
+pedido-service-1     | 2026-10-03T12:36:03.582578862Z 2026-10-03 09:36:03.582 INFO  [   scheduling-1] OutboxRelay              : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento publicado 17
+pagamento-service-1  | 2026-10-03T12:36:29.166307746Z 2026-10-03 09:36:29.165 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento pedido.criado recebido: pedido 17 (instancia=9d5f8ffd3f8a)
+pagamento-service-1  | 2026-10-03T12:36:29.680224429Z 2026-10-03 09:36:29.679 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Pagamento aprovado 17
+pedido-service-1     | 2026-10-03T12:36:29.683410989Z 2026-10-03 09:36:29.683 INFO  [ntContainer#0-1] amentoProcessadoListener : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento pagamento.processado recebido: pedido 17 status APROVADO
+pagamento-service-1  | 2026-10-03T12:36:29.687379177Z 2026-10-03 09:36:29.687 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Evento pagamento.processado publicado 17 (APROVADO)
+pedido-service-1     | 2026-10-03T12:36:29.691901070Z 2026-10-03 09:36:29.691 INFO  [ntContainer#0-1] PedidoService            : correlationId=1617fc6b-dd48-4f8f-8b07-8642f06953af Pedido 17 atualizado para PAGO
+
+
+# Ciclo de vida do Pagamento Service no período (parada e retorno)
+
+$ docker compose logs --no-color --timestamps pagamento-service | grep -E 'Started PagamentoApplication|Stopping|Shutting down|Graceful shutdown|Closing JPA' | head -20
+pagamento-service-1  | 2026-10-03T12:35:00.201899915Z 2026-10-03 09:35:00.201 INFO  [           main] PagamentoApplication     : Started PagamentoApplication in 5.38 seconds (process running for 5.765)
+pagamento-service-1  | 2026-10-03T12:35:56.275153833Z 2026-10-03 09:35:56.274 INFO  [tomcat-shutdown] GracefulShutdown         : Graceful shutdown complete
+pagamento-service-1  | 2026-10-03T12:35:56.284102056Z 2026-10-03 09:35:56.283 INFO  [ionShutdownHook] EntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+pagamento-service-1  | 2026-10-03T12:36:21.701562972Z 2026-10-03 09:36:21.701 INFO  [           main] PagamentoApplication     : Started PagamentoApplication in 4.496 seconds (process running for 4.947)
+
+
+# 8. Situação da fila (a evidência da fila DURANTE a falha está em evidencias/etapa08-09-falha-recuperacao.txt)
+
+$ filas
+name                        messages_ready              messages_unacknowledged     consumers                   
+pagamento.processado        0                           0                           1                           
+pedido.criado.dlq           0                           0                           0                           
+pedido.criado               0                           0                           1                           
+pagamento.processado.dlq    0                           0                           0                           
+

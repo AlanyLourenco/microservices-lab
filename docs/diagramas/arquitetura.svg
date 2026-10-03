@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 660" font-family="Segoe UI, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f2937"/>
+    </marker>
+    <marker id="setaAmqp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
+    </marker>
+    <marker id="setaCinza" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b7280"/>
+    </marker>
+    <g id="cilindro">
+      <path d="M0,12 a80,12 0 0,1 160,0 v56 a80,12 0 0,1 -160,0 z" fill="#e0f2fe" stroke="#0369a1" stroke-width="1.5"/>
+      <path d="M0,12 a80,12 0 0,0 160,0" fill="none" stroke="#0369a1" stroke-width="1.5"/>
+    </g>
+  </defs>
+
+  <rect x="0" y="0" width="1040" height="660" fill="#ffffff"/>
+
+  <!-- Redes privadas (uma por banco) -->
+  <rect x="400" y="14" width="620" height="140" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-dasharray="6 4"/>
+  <text x="412" y="32" fill="#15803d" font-size="12" font-weight="600">rede estoque-net</text>
+  <rect x="160" y="196" width="230" height="384" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-dasharray="6 4"/>
+  <text x="172" y="214" fill="#1d4ed8" font-size="12" font-weight="600">rede pedido-net</text>
+  <rect x="800" y="196" width="220" height="384" rx="12" fill="#faf5ff" stroke="#7c3aed" stroke-dasharray="6 4"/>
+  <text x="812" y="214" fill="#6d28d9" font-size="12" font-weight="600">rede pagamento-net</text>
+
+  <!-- Cliente -->
+  <rect x="16" y="252" width="118" height="58" rx="8" fill="#f3f4f6" stroke="#374151" stroke-width="1.5"/>
+  <text x="75" y="277" text-anchor="middle" font-weight="600">Cliente</text>
+  <text x="75" y="295" text-anchor="middle" font-size="11" fill="#4b5563">cURL / Postman</text>
+
+  <!-- Estoque Service -->
+  <rect x="430" y="46" width="210" height="88" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="1.8"/>
+  <text x="535" y="72" text-anchor="middle" font-weight="700">Estoque Service</text>
+  <text x="535" y="90" text-anchor="middle" font-size="11" fill="#374151">host :8081 → contêiner :8080</text>
+  <text x="535" y="106" text-anchor="middle" font-size="11" fill="#374151">GET /produtos · PUT …/reservar</text>
+  <text x="535" y="121" text-anchor="middle" font-size="11" fill="#374151">PUT /reservas/{cid}/liberar</text>
+  <use href="#cilindro" x="820" y="50"/>
+  <text x="900" y="92" text-anchor="middle" font-weight="600">estoque-db</text>
+  <text x="900" y="108" text-anchor="middle" font-size="11" fill="#374151">produto · reserva</text>
+
+  <!-- Pedido Service -->
+  <rect x="180" y="232" width="190" height="104" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.8"/>
+  <text x="275" y="258" text-anchor="middle" font-weight="700">Pedido Service</text>
+  <text x="275" y="276" text-anchor="middle" font-size="11" fill="#374151">host :8080</text>
+  <text x="275" y="292" text-anchor="middle" font-size="11" fill="#374151">POST · GET /pedidos</text>
+  <text x="275" y="308" text-anchor="middle" font-size="11" fill="#374151">gera o correlationId</text>
+  <text x="275" y="324" text-anchor="middle" font-size="11" fill="#374151">relay da outbox</text>
+  <use href="#cilindro" x="195" y="468"/>
+  <text x="275" y="510" text-anchor="middle" font-weight="600">pedido-db</text>
+  <text x="275" y="526" text-anchor="middle" font-size="11" fill="#374151">pedido · outbox_evento</text>
+
+  <!-- Pagamento Service (réplicas) -->
+  <rect x="836" y="240" width="170" height="96" rx="8" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.2"/>
+  <rect x="826" y="232" width="170" height="96" rx="8" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.8"/>
+  <text x="911" y="258" text-anchor="middle" font-weight="700">Pagamento Service</text>
+  <text x="911" y="276" text-anchor="middle" font-size="11" fill="#374151">sem porta no host (expose)</text>
+  <text x="911" y="292" text-anchor="middle" font-size="11" fill="#374151">aprova ~80% / rejeita ~20%</text>
+  <text x="911" y="308" text-anchor="middle" font-size="11" fill="#374151">consumidor idempotente</text>
+  <text x="921" y="352" text-anchor="middle" font-size="11" fill="#6d28d9" font-style="italic">N réplicas (--scale)</text>
+  <use href="#cilindro" x="830" y="468"/>
+  <text x="910" y="510" text-anchor="middle" font-weight="600">pagamento-db</text>
+  <text x="910" y="526" text-anchor="middle" font-size="11" fill="#374151">pagamento (pedido_id UNIQUE)</text>
+
+  <!-- RabbitMQ -->
+  <rect x="420" y="196" width="360" height="384" rx="12" fill="#fffbeb" stroke="#b45309" stroke-width="1.8"/>
+  <text x="600" y="218" text-anchor="middle" font-weight="700" fill="#92400e">RabbitMQ  (:5672 · gerenciamento :15672)</text>
+
+  <rect x="440" y="236" width="150" height="46" rx="6" fill="#fde68a" stroke="#b45309"/>
+  <text x="515" y="255" text-anchor="middle" font-weight="600" font-size="12">pedidos.exchange</text>
+  <text x="515" y="271" text-anchor="middle" font-size="10.5" fill="#4b5563">exchange topic</text>
+
+  <rect x="616" y="236" width="150" height="46" rx="6" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
+  <text x="691" y="255" text-anchor="middle" font-weight="600" font-size="12">pedido.criado</text>
+  <text x="691" y="271" text-anchor="middle" font-size="10.5" fill="#4b5563">fila durável</text>
+
+  <rect x="616" y="340" width="150" height="46" rx="6" fill="#fde68a" stroke="#b45309"/>
+  <text x="691" y="359" text-anchor="middle" font-weight="600" font-size="12">pagamentos.exchange</text>
+  <text x="691" y="375" text-anchor="middle" font-size="10.5" fill="#4b5563">exchange topic</text>
+
+  <rect x="440" y="340" width="150" height="46" rx="6" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
+  <text x="515" y="359" text-anchor="middle" font-weight="600" font-size="12">pagamento.processado</text>
+  <text x="515" y="375" text-anchor="middle" font-size="10.5" fill="#4b5563">fila durável</text>
+
+  <rect x="440" y="470" width="150" height="40" rx="6" fill="#f3f4f6" stroke="#6b7280"/>
+  <text x="515" y="494" text-anchor="middle" font-size="12">lab.dlx (direct)</text>
+  <rect x="616" y="458" width="150" height="64" rx="6" fill="#f3f4f6" stroke="#6b7280"/>
+  <text x="691" y="481" text-anchor="middle" font-size="11.5">pedido.criado.dlq</text>
+  <text x="691" y="500" text-anchor="middle" font-size="11.5">pagamento.processado.dlq</text>
+  <text x="600" y="556" text-anchor="middle" font-size="11" fill="#6b7280">mensagens que falham após 3 tentativas vão para as DLQs</text>
+
+  <!-- Setas síncronas -->
+  <line x1="134" y1="281" x2="178" y2="281" stroke="#1f2937" stroke-width="1.8" marker-end="url(#seta)"/>
+  <text x="156" y="272" text-anchor="middle" font-size="10.5">HTTP</text>
+
+  <path d="M260,232 V90 H428" fill="none" stroke="#1f2937" stroke-width="1.8" marker-end="url(#seta)"/>
+  <text x="268" y="132" font-size="11.5" font-weight="600">REST síncrono</text>
+  <text x="268" y="147" font-size="10.5" fill="#374151">X-Correlation-Id</text>
+  <text x="268" y="161" font-size="10.5" fill="#374151">timeouts 2 s / 5 s</text>
+
+  <line x1="640" y1="90" x2="818" y2="90" stroke="#1f2937" stroke-width="1.8" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="729" y="82" text-anchor="middle" font-size="10.5">JDBC</text>
+  <line x1="275" y1="336" x2="275" y2="466" stroke="#1f2937" stroke-width="1.8" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="283" y="420" font-size="10.5">JDBC</text>
+  <line x1="911" y1="328" x2="911" y2="466" stroke="#1f2937" stroke-width="1.8" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="919" y="420" font-size="10.5">JDBC</text>
+
+  <!-- Setas assíncronas (AMQP) -->
+  <line x1="370" y1="258" x2="438" y2="258" stroke="#b45309" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#setaAmqp)"/>
+  <text x="404" y="250" text-anchor="middle" font-size="10" fill="#92400e">publica</text>
+  <line x1="590" y1="259" x2="614" y2="259" stroke="#b45309" stroke-width="1.8" marker-end="url(#setaAmqp)"/>
+  <text x="603" y="298" text-anchor="middle" font-size="10" fill="#92400e">rk pedido.criado</text>
+  <line x1="766" y1="259" x2="824" y2="259" stroke="#b45309" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#setaAmqp)"/>
+  <text x="795" y="251" text-anchor="middle" font-size="10" fill="#92400e">consome</text>
+
+  <path d="M826,312 H796 V363 H768" fill="none" stroke="#b45309" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#setaAmqp)"/>
+  <text x="790" y="398" text-anchor="middle" font-size="10" fill="#92400e">publica</text>
+  <line x1="616" y1="363" x2="592" y2="363" stroke="#b45309" stroke-width="1.8" marker-end="url(#setaAmqp)"/>
+  <text x="603" y="334" text-anchor="middle" font-size="10" fill="#92400e">rk pagamento.processado</text>
+  <path d="M440,363 H405 V312 H372" fill="none" stroke="#b45309" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#setaAmqp)"/>
+  <text x="408" y="384" text-anchor="middle" font-size="10" fill="#92400e">consome</text>
+
+  <line x1="515" y1="386" x2="515" y2="468" stroke="#6b7280" stroke-width="1.3" stroke-dasharray="3 3" marker-end="url(#setaCinza)"/>
+  <path d="M691,282 V320 H608 V430 H530 V468" fill="none" stroke="#6b7280" stroke-width="1.3" stroke-dasharray="3 3" marker-end="url(#setaCinza)"/>
+  <line x1="590" y1="490" x2="614" y2="490" stroke="#6b7280" stroke-width="1.3" marker-end="url(#setaCinza)"/>
+
+  <!-- Legenda -->
+  <g transform="translate(16,600)">
+    <line x1="0" y1="10" x2="40" y2="10" stroke="#1f2937" stroke-width="1.8" marker-end="url(#seta)"/>
+    <text x="48" y="14" font-size="11.5">síncrono (HTTP / JDBC)</text>
+    <line x1="210" y1="10" x2="250" y2="10" stroke="#b45309" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#setaAmqp)"/>
+    <text x="258" y="14" font-size="11.5">assíncrono (AMQP)</text>
+    <rect x="400" y="2" width="34" height="16" rx="4" fill="none" stroke="#6b7280" stroke-dasharray="6 4"/>
+    <text x="442" y="14" font-size="11.5">rede privada do banco: só o próprio serviço a alcança</text>
+    <text x="0" y="40" font-size="11.5" fill="#374151">Os três serviços e o RabbitMQ também compartilham a rede "backend" (REST e AMQP). Nenhum serviço alcança o banco de outro.</text>
+  </g>
+</svg>

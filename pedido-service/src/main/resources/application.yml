@@ -1,0 +1,64 @@
+spring:
+  jackson:
+    # Datas sempre no fuso do laboratório (o Postgres devolve timestamptz em UTC).
+    time-zone: ${TZ:America/Sao_Paulo}
+  application:
+    name: pedido-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pedido}
+    username: ${SPRING_DATASOURCE_USERNAME:pedido}
+    password: ${SPRING_DATASOURCE_PASSWORD:pedido}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: 5672
+    username: guest
+    password: guest
+    # Confirmação do broker (publisher confirms) e devolução de mensagens sem fila de
+    # destino (mandatory + returns): o relay da outbox só marca um evento como publicado
+    # quando o RabbitMQ confirma que ele foi roteado para uma fila.
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        prefetch: 1
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000ms
+          multiplier: 2.0
+
+server:
+  port: 8080
+
+estoque:
+  service:
+    url: ${ESTOQUE_SERVICE_URL:http://localhost:8081}
+    connect-timeout: 2s
+    read-timeout: 5s
+
+outbox:
+  intervalo-ms: 500
+
+# Habilita o cabeçalho X-Simular-Falha usado no experimento de consistência (Etapa 3).
+lab:
+  simulacao-falhas:
+    habilitada: ${LAB_SIMULACAO_FALHAS_HABILITADA:false}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%15.15thread] %-24.24logger{0} : %msg%n"

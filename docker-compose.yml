@@ -1,0 +1,181 @@
+# Laboratório Avaliativo — Arquitetura de Microsserviços
+# Alany Gabriely Lourenço da Silva · Matrícula 202105018
+#
+# Baseado no compose da Etapa 4, com as correções descritas no documento de entrega:
+#  - pedido-service espera o estoque-service ficar SAUDÁVEL (service_healthy), e não
+#    apenas "iniciado": um contêiner iniciado ainda não está aceitando requisições;
+#  - healthcheck nos três serviços (via /actuator/health);
+#  - RabbitMQ com hostname fixo e volume, para que filas e mensagens persistentes
+#    sobrevivam à recriação do contêiner;
+#  - uma rede privada por banco: cada serviço só alcança o PRÓPRIO banco. A regra
+#    "é proibido consultar o banco de outro serviço" vira uma garantia de
+#    infraestrutura, e não só uma convenção;
+#  - limites de memória (a máquina de teste tem 7,7 GB de RAM), restart on-failure,
+#    fuso horário local e um atraso de 0,5 s por pagamento (PAGAMENTO_TEMPO_PROCESSAMENTO_MS),
+#    que simula o gateway e torna a fila observável.
+
+name: microservices-lab
+
+x-java-runtime: &java-runtime
+  TZ: America/Sao_Paulo
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xss512k"
+
+x-service-healthcheck: &service-healthcheck
+  test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+  interval: 10s
+  timeout: 3s
+  retries: 12
+  start_period: 60s
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  estoque-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: estoque
+      POSTGRES_USER: estoque
+      POSTGRES_PASSWORD: estoque
+    volumes:
+      - estoque-data:/var/lib/postgresql/data
+    networks:
+      - estoque-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U estoque -d estoque"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pedido-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: pedido
+      POSTGRES_USER: pedido
+      POSTGRES_PASSWORD: pedido
+    volumes:
+      - pedido-data:/var/lib/postgresql/data
+    networks:
+      - pedido-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pedido -d pedido"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pagamento-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: pagamento
+      POSTGRES_USER: pagamento
+      POSTGRES_PASSWORD: pagamento
+    volumes:
+      - pagamento-data:/var/lib/postgresql/data
+    networks:
+      - pagamento-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pagamento -d pagamento"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  estoque-service:
+    build: ./estoque-service
+    ports:
+      - "8081:8080"
+    environment:
+      <<: *java-runtime
+      SPRING_DATASOURCE_URL: jdbc:postgresql://estoque-db:5432/estoque
+      SPRING_DATASOURCE_USERNAME: estoque
+      SPRING_DATASOURCE_PASSWORD: estoque
+    networks:
+      - backend
+      - estoque-net
+    mem_limit: 512m
+    restart: on-failure
+    healthcheck: *service-healthcheck
+    depends_on:
+      estoque-db:
+        condition: service_healthy
+
+  pedido-service:
+    build: ./pedido-service
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *java-runtime
+      SPRING_DATASOURCE_URL: jdbc:postgresql://pedido-db:5432/pedido
+      SPRING_DATASOURCE_USERNAME: pedido
+      SPRING_DATASOURCE_PASSWORD: pedido
+      SPRING_RABBITMQ_HOST: rabbitmq
+      ESTOQUE_SERVICE_URL: http://estoque-service:8080
+      # habilita o cabeçalho X-Simular-Falha (experimento de consistência da Etapa 3)
+      LAB_SIMULACAO_FALHAS_HABILITADA: "true"
+    networks:
+      - backend
+      - pedido-net
+    mem_limit: 512m
+    # on-failure: depois da simulação QUEDA_APOS_RESERVA (Runtime.halt), o Docker
+    # reinicia o serviço sozinho. "docker compose stop" não dispara o reinício.
+    restart: on-failure
+    healthcheck: *service-healthcheck
+    depends_on:
+      pedido-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      estoque-service:
+        condition: service_healthy
+
+  pagamento-service:
+    build: ./pagamento-service
+    # Sem "ports": com uma porta fixa no host, a segunda réplica não subiria na Etapa 10
+    # (porta já em uso). "expose" deixa a porta visível só dentro da rede do Compose.
+    expose:
+      - "8080"
+    environment:
+      <<: *java-runtime
+      SPRING_DATASOURCE_URL: jdbc:postgresql://pagamento-db:5432/pagamento
+      SPRING_DATASOURCE_USERNAME: pagamento
+      SPRING_DATASOURCE_PASSWORD: pagamento
+      SPRING_RABBITMQ_HOST: rabbitmq
+      PAGAMENTO_TAXA_APROVACAO: "0.8"
+      PAGAMENTO_TEMPO_PROCESSAMENTO_MS: "500"
+    networks:
+      - backend
+      - pagamento-net
+    mem_limit: 512m
+    restart: on-failure
+    healthcheck: *service-healthcheck
+    depends_on:
+      pagamento-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+networks:
+  # Rede compartilhada: chamadas REST (Pedido -> Estoque) e acesso ao RabbitMQ.
+  backend:
+  # Redes privadas: cada banco só é alcançável pelo próprio serviço.
+  estoque-net:
+  pedido-net:
+  pagamento-net:
+
+volumes:
+  estoque-data:
+  pedido-data:
+  pagamento-data:
+  rabbitmq-data:

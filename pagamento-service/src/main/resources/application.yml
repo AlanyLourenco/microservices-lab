@@ -1,0 +1,58 @@
+spring:
+  jackson:
+    # Datas sempre no fuso do laboratório (o Postgres devolve timestamptz em UTC).
+    time-zone: ${TZ:America/Sao_Paulo}
+  application:
+    name: pagamento-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pagamento}
+    username: ${SPRING_DATASOURCE_USERNAME:pagamento}
+    password: ${SPRING_DATASOURCE_PASSWORD:pagamento}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: 5672
+    username: guest
+    password: guest
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        # Uma mensagem por vez por consumidor: com duas instâncias (Etapa 10) a fila
+        # distribui o trabalho de forma justa em vez de entregar um lote a uma só.
+        prefetch: 1
+        # Ack automático só depois que o método do listener termina sem exceção:
+        # se o serviço cair no meio do processamento, a mensagem volta para a fila.
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000ms
+          multiplier: 2.0
+
+server:
+  port: 8080
+
+pagamento:
+  # Etapa 6: ~80% aprovados e ~20% rejeitados
+  taxa-aprovacao: ${PAGAMENTO_TAXA_APROVACAO:0.8}
+  # Simula o tempo de resposta de um gateway de pagamento
+  tempo-processamento-ms: ${PAGAMENTO_TEMPO_PROCESSAMENTO_MS:500}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%15.15thread] %-24.24logger{0} : %msg%n"

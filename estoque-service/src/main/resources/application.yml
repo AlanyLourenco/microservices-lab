@@ -1,0 +1,29 @@
+spring:
+  jackson:
+    # Datas sempre no fuso do laboratório (o Postgres devolve timestamptz em UTC).
+    time-zone: ${TZ:America/Sao_Paulo}
+  application:
+    name: estoque-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/estoque}
+    username: ${SPRING_DATASOURCE_USERNAME:estoque}
+    password: ${SPRING_DATASOURCE_PASSWORD:estoque}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%15.15thread] %-24.24logger{0} : %msg%n"

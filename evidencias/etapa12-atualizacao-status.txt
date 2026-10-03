@@ -1,0 +1,197 @@
+
+
+######## ETAPA 12: ATUALIZAÇÃO ASSÍNCRONA DO PEDIDO ########
+
+$ filas
+name                        messages_ready              messages_unacknowledged     consumers                   
+pagamento.processado        0                           0                           1                           
+pedido.criado.dlq           0                           0                           0                           
+pedido.criado               0                           0                           1                           
+pagamento.processado.dlq    0                           0                           0                           
+
+
+$ curl -s http://localhost:8081/produtos | json
+[
+  {
+    "id": 1,
+    "nome": "Notebook",
+    "quantidade": 8
+  },
+  {
+    "id": 2,
+    "nome": "Mouse",
+    "quantidade": 40
+  },
+  {
+    "id": 3,
+    "nome": "Teclado",
+    "quantidade": 10
+  }
+]
+
+
+HTTP   ID     correlationId                          status final
+201 30 afd887ba-d062-468b-9d46-4e67524a4c00 PAGO
+201 31 dee88078-3949-4ca0-928d-9bc06d58551e PAGO
+201 32 0e53255c-237f-43ea-83c4-c262b5744f98 PAGO
+201 33 6c37aee0-bcab-4961-975a-17231f7b2e5c PAGO
+201 34 1dcccb4c-5516-49d5-8e88-3d5da5b8d36d PAGO
+201 35 0ad62442-7992-4a89-b484-14039a34e524 REJEITADO
+
+# Caso APROVADO -> PAGO (pedido #30)
+
+$ curl -s http://localhost:8080/pedidos/30 | json
+{
+  "id": 30,
+  "produtoId": 2,
+  "quantidade": 1,
+  "status": "PAGO",
+  "correlationId": "afd887ba-d062-468b-9d46-4e67524a4c00",
+  "criadoEm": "2026-10-03T09:37:23.862648-03:00",
+  "atualizadoEm": "2026-10-03T09:37:24.809918-03:00"
+}
+
+
+$ logs_por_correlation afd887ba-d062-468b-9d46-4e67524a4c00
+pedido-service-1     | 2026-10-03T12:37:23.844477475Z 2026-10-03 09:37:23.843 INFO  [nio-8080-exec-8] PedidoService            : correlationId=afd887ba-d062-468b-9d46-4e67524a4c00 Requisição de pedido recebida (produto=2, quantidade=1)
+estoque-service-1    | 2026-10-03T12:37:23.856436999Z 2026-10-03 09:37:23.856 INFO  [nio-8080-exec-6] ReservaService           : correlationId=afd887ba-d062-468b-9d46-4e67524a4c00 Produto 2 reservado (quantidade=1, disponivel=39)
+pedido-service-1     | 2026-10-03T12:37:23.862478616Z 2026-10-03 09:37:23.862 INFO  [nio-8080-exec-8] EstoqueClient            : correlationId=afd887ba-d062-468b-9d46-4e67524a4c00 Estoque do produto 2 reservado via REST (quantidade=1)
+pedido-service-1     | 2026-10-03T12:37:23.866070026Z 2026-10-03 09:37:23.865 INFO  [nio-8080-exec-8] RegistroPedido           : correlationId=afd887ba-d062-468b-9d46-4e67524a4c00 Evento pedido.criado do pedido 30 registrado na outbox
+pedido-service-1     | 2026-10-03T12:37:23.869961311Z 2026-10-03 09:37:23.868 INFO  [nio-8080-exec-8] PedidoService            : correlationId=afd887ba-d062-468b-9d46-4e67524a4c00 Pedido 30 criado
+pagamento-service-1  | 2026-10-03T12:37:24.290714224Z 2026-10-03 09:37:24.290 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=afd887ba-d062-468b-9d46-4e67524a4c00 Evento pedido.criado recebido: pedido 30 (instancia=9d5f8ffd3f8a)
+pedido-service-1     | 2026-10-03T12:37:24.298891964Z 2026-10-03 09:37:24.298 INFO  [   scheduling-1] OutboxRelay              : correlationId=afd887ba-d062-468b-9d46-4e67524a4c00 Evento publicado 30
+pagamento-service-1  | 2026-10-03T12:37:24.804717864Z 2026-10-03 09:37:24.804 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=afd887ba-d062-468b-9d46-4e67524a4c00 Pagamento aprovado 30
+pedido-service-1     | 2026-10-03T12:37:24.807713230Z 2026-10-03 09:37:24.807 INFO  [ntContainer#0-1] amentoProcessadoListener : correlationId=afd887ba-d062-468b-9d46-4e67524a4c00 Evento pagamento.processado recebido: pedido 30 status APROVADO
+pagamento-service-1  | 2026-10-03T12:37:24.813076426Z 2026-10-03 09:37:24.812 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=afd887ba-d062-468b-9d46-4e67524a4c00 Evento pagamento.processado publicado 30 (APROVADO)
+pedido-service-1     | 2026-10-03T12:37:24.814042712Z 2026-10-03 09:37:24.813 INFO  [ntContainer#0-1] PedidoService            : correlationId=afd887ba-d062-468b-9d46-4e67524a4c00 Pedido 30 atualizado para PAGO
+
+
+$ curl -s http://localhost:8081/reservas/afd887ba-d062-468b-9d46-4e67524a4c00 | json
+{
+  "id": 33,
+  "correlationId": "afd887ba-d062-468b-9d46-4e67524a4c00",
+  "produtoId": 2,
+  "quantidade": 1,
+  "status": "RESERVADA",
+  "criadaEm": "2026-10-03T09:37:23.854065-03:00",
+  "liberadaEm": null
+}
+
+
+# Caso REJEITADO -> REJEITADO (pedido #35); a reserva é compensada (LIBERADA)
+
+$ curl -s http://localhost:8080/pedidos/35 | json
+{
+  "id": 35,
+  "produtoId": 2,
+  "quantidade": 1,
+  "status": "REJEITADO",
+  "correlationId": "0ad62442-7992-4a89-b484-14039a34e524",
+  "criadoEm": "2026-10-03T09:37:36.341091-03:00",
+  "atualizadoEm": "2026-10-03T09:37:36.968766-03:00"
+}
+
+
+$ logs_por_correlation 0ad62442-7992-4a89-b484-14039a34e524
+pedido-service-1     | 2026-10-03T12:37:36.326442166Z 2026-10-03 09:37:36.326 INFO  [nio-8080-exec-2] PedidoService            : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Requisição de pedido recebida (produto=2, quantidade=1)
+estoque-service-1    | 2026-10-03T12:37:36.335543301Z 2026-10-03 09:37:36.335 INFO  [nio-8080-exec-5] ReservaService           : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Produto 2 reservado (quantidade=1, disponivel=34)
+pedido-service-1     | 2026-10-03T12:37:36.341225953Z 2026-10-03 09:37:36.340 INFO  [nio-8080-exec-2] EstoqueClient            : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Estoque do produto 2 reservado via REST (quantidade=1)
+pedido-service-1     | 2026-10-03T12:37:36.343583382Z 2026-10-03 09:37:36.343 INFO  [nio-8080-exec-2] RegistroPedido           : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Evento pedido.criado do pedido 35 registrado na outbox
+pedido-service-1     | 2026-10-03T12:37:36.346984672Z 2026-10-03 09:37:36.346 INFO  [nio-8080-exec-2] PedidoService            : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Pedido 35 criado
+pagamento-service-1  | 2026-10-03T12:37:36.435859374Z 2026-10-03 09:37:36.435 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Evento pedido.criado recebido: pedido 35 (instancia=9d5f8ffd3f8a)
+pedido-service-1     | 2026-10-03T12:37:36.445348037Z 2026-10-03 09:37:36.444 INFO  [   scheduling-1] OutboxRelay              : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Evento publicado 35
+pagamento-service-1  | 2026-10-03T12:37:36.950307149Z 2026-10-03 09:37:36.949 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Pagamento rejeitado 35
+pedido-service-1     | 2026-10-03T12:37:36.952854854Z 2026-10-03 09:37:36.952 INFO  [ntContainer#0-1] amentoProcessadoListener : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Evento pagamento.processado recebido: pedido 35 status REJEITADO
+pagamento-service-1  | 2026-10-03T12:37:36.958816542Z 2026-10-03 09:37:36.958 INFO  [ntContainer#0-1] mentoProcessadoPublisher : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Evento pagamento.processado publicado 35 (REJEITADO)
+estoque-service-1    | 2026-10-03T12:37:36.961984789Z 2026-10-03 09:37:36.961 INFO  [nio-8080-exec-6] ReservaService           : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Reserva liberada: produto 2 devolvido ao estoque (quantidade=1)
+pedido-service-1     | 2026-10-03T12:37:36.967985857Z 2026-10-03 09:37:36.967 INFO  [ntContainer#0-1] PedidoService            : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Reserva do pedido 35 liberada (pagamento rejeitado)
+pedido-service-1     | 2026-10-03T12:37:36.973740649Z 2026-10-03 09:37:36.973 INFO  [ntContainer#0-1] PedidoService            : correlationId=0ad62442-7992-4a89-b484-14039a34e524 Pedido 35 atualizado para REJEITADO
+
+
+$ curl -s http://localhost:8081/reservas/0ad62442-7992-4a89-b484-14039a34e524 | json
+{
+  "id": 38,
+  "correlationId": "0ad62442-7992-4a89-b484-14039a34e524",
+  "produtoId": 2,
+  "quantidade": 1,
+  "status": "LIBERADA",
+  "criadaEm": "2026-10-03T09:37:36.333572-03:00",
+  "liberadaEm": "2026-10-03T09:37:36.959471-03:00"
+}
+
+
+# Conferência cruzada (cada banco consultado pelo próprio serviço/contêiner)
+
+$ sql_pedido "select id, status from pedido where id > 29 order by id"
+ id |  status   
+----+-----------
+ 30 | PAGO
+ 31 | PAGO
+ 32 | PAGO
+ 33 | PAGO
+ 34 | PAGO
+ 35 | REJEITADO
+(6 rows)
+
+
+
+$ sql_pagamento "select pedido_id, status from pagamento where pedido_id > 29 order by pedido_id"
+ pedido_id |  status   
+-----------+-----------
+        30 | APROVADO
+        31 | APROVADO
+        32 | APROVADO
+        33 | APROVADO
+        34 | APROVADO
+        35 | REJEITADO
+(6 rows)
+
+
+
+# Totais gerais: proporção de aprovação observada
+
+$ sql_pagamento "select status, count(*), round(100.0 * count(*) / sum(count(*)) over (), 1) as percentual from pagamento group by status"
+  status   | count | percentual 
+-----------+-------+------------
+ REJEITADO |     9 |       25.7
+ APROVADO  |    26 |       74.3
+(2 rows)
+
+
+
+$ sql_pedido "select status, count(*) from pedido group by status order by status"
+  status   | count 
+-----------+-------
+ PAGO      |    26
+ REJEITADO |     9
+(2 rows)
+
+
+
+$ curl -s http://localhost:8081/produtos | json
+[
+  {
+    "id": 1,
+    "nome": "Notebook",
+    "quantidade": 8
+  },
+  {
+    "id": 2,
+    "nome": "Mouse",
+    "quantidade": 35
+  },
+  {
+    "id": 3,
+    "nome": "Teclado",
+    "quantidade": 10
+  }
+]
+
+
+$ filas
+name                        messages_ready              messages_unacknowledged     consumers                   
+pagamento.processado        0                           0                           1                           
+pedido.criado.dlq           0                           0                           0                           
+pedido.criado               0                           0                           1                           
+pagamento.processado.dlq    0                           0                           0                           
+

@@ -1,0 +1,166 @@
+
+
+######## ETAPA 10: ESCALABILIDADE ########
+
+# O enunciado usa 'docker compose up --scale pagamento-service=2' (em primeiro plano); aqui -d para o roteiro seguir
+
+$ docker compose up -d --scale pagamento-service=2
+ Container microservices-lab-rabbitmq-1 Running 
+ Container microservices-lab-estoque-db-1 Running 
+ Container microservices-lab-pedido-db-1 Running 
+ Container microservices-lab-pagamento-db-1 Running 
+ Container microservices-lab-estoque-service-1 Running 
+ Container microservices-lab-pedido-service-1 Running 
+ Container microservices-lab-pagamento-service-1 Running 
+ Container microservices-lab-pagamento-service-2 Creating 
+ Container microservices-lab-pagamento-service-2 Created 
+ Container microservices-lab-rabbitmq-1 Waiting 
+ Container microservices-lab-pagamento-db-1 Waiting 
+ Container microservices-lab-estoque-db-1 Waiting 
+ Container microservices-lab-pagamento-db-1 Healthy 
+ Container microservices-lab-estoque-db-1 Healthy 
+ Container microservices-lab-rabbitmq-1 Waiting 
+ Container microservices-lab-estoque-service-1 Waiting 
+ Container microservices-lab-pedido-db-1 Waiting 
+ Container microservices-lab-rabbitmq-1 Healthy 
+ Container microservices-lab-pagamento-service-2 Starting 
+ Container microservices-lab-pagamento-service-2 Started 
+ Container microservices-lab-estoque-service-1 Healthy 
+ Container microservices-lab-rabbitmq-1 Healthy 
+ Container microservices-lab-pedido-db-1 Healthy 
+
+
+$ docker compose ps pagamento-service --format 'table {{.Name}}\t{{.State}}\t{{.Status}}'
+NAME                                    STATE     STATUS
+microservices-lab-pagamento-service-1   running   Up 40 seconds (healthy)
+microservices-lab-pagamento-service-2   running   Up 12 seconds (healthy)
+
+
+# Dois consumidores na fila pedido.criado
+
+$ filas
+name                        messages_ready              messages_unacknowledged     consumers                   
+pagamento.processado        0                           0                           1                           
+pedido.criado.dlq           0                           0                           0                           
+pedido.criado               0                           0                           2                           
+pagamento.processado.dlq    0                           0                           0                           
+
+
+$ docker compose exec -T rabbitmq rabbitmqctl list_consumers -q queue_name channel_pid prefetch_count | grep pedido.criado
+pedido.criado	<rabbit@rabbitmq.1791030886.1206.0>	1
+pedido.criado	<rabbit@rabbitmq.1791030886.1156.0>	1
+
+
+# Criando 12 pedidos em sequência rápida
+
+HTTP   ID     correlationId
+201 18 ff761acd-0b9d-47f3-8f04-76a659a35d34
+201 19 ab0821fb-7b06-48ea-9e77-5c219b85ed7a
+201 20 97b40158-be3a-4950-9497-d2fca17b7f48
+201 21 1351a0b9-4da9-4981-9cea-922e4e33f257
+201 22 8494609e-def4-4a9a-aba5-1e202b46a8ad
+201 23 97ad7723-aa39-43e5-a0a3-4b66c1952fe2
+201 24 c5413af7-0eb5-4d42-b2fb-9f0f183c4751
+201 25 e081e393-9642-4abe-a561-70d02eb1ca89
+201 26 6c37a7ae-35ee-494c-9dec-5a17f67038de
+201 27 bff1dddb-494b-420a-80ee-24f516823f8a
+201 28 b13ab7c8-cabd-4229-a698-50400b8856c8
+201 29 a05124b4-e232-4780-9445-a7f927c589fb
+
+# Logs: pagamento-service-1 e pagamento-service-2 (intercalados pelo horário)
+
+$ docker compose logs --no-color --timestamps pagamento-service | grep -E 'Pagamento (aprovado|rejeitado)' | sort -k3,3 | tail -12
+pagamento-service-1  | 2026-10-03T12:36:58.994194989Z 2026-10-03 09:36:58.993 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=ff761acd-0b9d-47f3-8f04-76a659a35d34 Pagamento aprovado 18
+pagamento-service-2  | 2026-10-03T12:36:59.721106262Z 2026-10-03 09:36:59.720 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=ab0821fb-7b06-48ea-9e77-5c219b85ed7a Pagamento rejeitado 19
+pagamento-service-1  | 2026-10-03T12:37:00.021295506Z 2026-10-03 09:37:00.020 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=97b40158-be3a-4950-9497-d2fca17b7f48 Pagamento aprovado 20
+pagamento-service-2  | 2026-10-03T12:37:00.248732782Z 2026-10-03 09:37:00.248 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=1351a0b9-4da9-4981-9cea-922e4e33f257 Pagamento aprovado 21
+pagamento-service-1  | 2026-10-03T12:37:00.555750183Z 2026-10-03 09:37:00.555 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=8494609e-def4-4a9a-aba5-1e202b46a8ad Pagamento aprovado 22
+pagamento-service-2  | 2026-10-03T12:37:00.767638936Z 2026-10-03 09:37:00.766 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=97ad7723-aa39-43e5-a0a3-4b66c1952fe2 Pagamento aprovado 23
+pagamento-service-1  | 2026-10-03T12:37:01.087510778Z 2026-10-03 09:37:01.086 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=c5413af7-0eb5-4d42-b2fb-9f0f183c4751 Pagamento rejeitado 24
+pagamento-service-2  | 2026-10-03T12:37:01.602677951Z 2026-10-03 09:37:01.602 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=e081e393-9642-4abe-a561-70d02eb1ca89 Pagamento aprovado 25
+pagamento-service-1  | 2026-10-03T12:37:01.616928750Z 2026-10-03 09:37:01.616 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=6c37a7ae-35ee-494c-9dec-5a17f67038de Pagamento aprovado 26
+pagamento-service-2  | 2026-10-03T12:37:02.134126193Z 2026-10-03 09:37:02.133 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=bff1dddb-494b-420a-80ee-24f516823f8a Pagamento aprovado 27
+pagamento-service-1  | 2026-10-03T12:37:02.650065056Z 2026-10-03 09:37:02.649 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=b13ab7c8-cabd-4229-a698-50400b8856c8 Pagamento aprovado 28
+pagamento-service-2  | 2026-10-03T12:37:02.663150542Z 2026-10-03 09:37:02.662 INFO  [ntContainer#0-1] PedidoCriadoListener     : correlationId=a05124b4-e232-4780-9445-a7f927c589fb Pagamento aprovado 29
+
+
+# As mensagens foram distribuídas? Quantos pagamentos cada instância processou
+
+$ sql_pagamento "select instancia, count(*) as pagamentos from pagamento where pedido_id > 17 group by instancia"
+  instancia   | pagamentos 
+--------------+------------
+ 04f10fadfaec |          6
+ 9d5f8ffd3f8a |          6
+(2 rows)
+
+
+
+$ for c in $(docker compose ps -q pagamento-service); do echo "$(docker inspect -f '{{.Name}}' $c) = hostname $(docker inspect -f '{{.Config.Hostname}}' $c)"; done
+/microservices-lab-pagamento-service-1 = hostname 9d5f8ffd3f8a
+/microservices-lab-pagamento-service-2 = hostname 04f10fadfaec
+
+
+# Apenas uma instância processou cada mensagem? (nenhum pedido com mais de um pagamento)
+
+$ sql_pagamento "select pedido_id, count(*) as vezes, string_agg(instancia, ',') as instancias from pagamento where pedido_id > 17 group by pedido_id order by pedido_id"
+ pedido_id | vezes |  instancias  
+-----------+-------+--------------
+        18 |     1 | 9d5f8ffd3f8a
+        19 |     1 | 04f10fadfaec
+        20 |     1 | 9d5f8ffd3f8a
+        21 |     1 | 04f10fadfaec
+        22 |     1 | 9d5f8ffd3f8a
+        23 |     1 | 04f10fadfaec
+        24 |     1 | 9d5f8ffd3f8a
+        25 |     1 | 04f10fadfaec
+        26 |     1 | 9d5f8ffd3f8a
+        27 |     1 | 04f10fadfaec
+        28 |     1 | 9d5f8ffd3f8a
+        29 |     1 | 04f10fadfaec
+(12 rows)
+
+
+
+$ sql_pagamento "select count(*) as pedidos_com_pagamento_duplicado from (select pedido_id from pagamento group by pedido_id having count(*) > 1) d"
+ pedidos_com_pagamento_duplicado 
+---------------------------------
+                               0
+(1 row)
+
+
+
+$ filas
+name                        messages_ready              messages_unacknowledged     consumers                   
+pagamento.processado        0                           0                           1                           
+pedido.criado.dlq           0                           0                           0                           
+pedido.criado               0                           0                           2                           
+pagamento.processado.dlq    0                           0                           0                           
+
+
+# Voltando para 1 instância
+
+$ docker compose up -d --scale pagamento-service=1
+ Container microservices-lab-estoque-db-1 Running 
+ Container microservices-lab-pedido-db-1 Running 
+ Container microservices-lab-pagamento-db-1 Running 
+ Container microservices-lab-estoque-service-1 Running 
+ Container microservices-lab-pedido-service-1 Running 
+ Container microservices-lab-pagamento-service-1 Running 
+ Container microservices-lab-rabbitmq-1 Running 
+ Container microservices-lab-pagamento-service-2 Stopping 
+ Container microservices-lab-pagamento-service-2 Stopped 
+ Container microservices-lab-pagamento-service-2 Removing 
+ Container microservices-lab-pagamento-service-2 Removed 
+ Container microservices-lab-estoque-db-1 Waiting 
+ Container microservices-lab-pagamento-db-1 Waiting 
+ Container microservices-lab-rabbitmq-1 Waiting 
+ Container microservices-lab-estoque-db-1 Healthy 
+ Container microservices-lab-pedido-db-1 Waiting 
+ Container microservices-lab-rabbitmq-1 Waiting 
+ Container microservices-lab-estoque-service-1 Waiting 
+ Container microservices-lab-pagamento-db-1 Healthy 
+ Container microservices-lab-rabbitmq-1 Healthy 
+ Container microservices-lab-estoque-service-1 Healthy 
+ Container microservices-lab-rabbitmq-1 Healthy 
+ Container microservices-lab-pedido-db-1 Healthy 
+

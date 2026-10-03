@@ -1,0 +1,114 @@
+
+
+######## ETAPA 1: ESTOQUE SERVICE ########
+
+# Endpoint 1: consultar todos os produtos (dados iniciais: Notebook 10, Mouse 50, Teclado 20)
+
+$ curl -s http://localhost:8081/produtos | json
+[
+  {
+    "id": 1,
+    "nome": "Notebook",
+    "quantidade": 10
+  },
+  {
+    "id": 2,
+    "nome": "Mouse",
+    "quantidade": 50
+  },
+  {
+    "id": 3,
+    "nome": "Teclado",
+    "quantidade": 20
+  }
+]
+
+
+# Endpoint 2: consultar produto
+
+$ curl -s http://localhost:8081/produtos/1 | json
+{
+  "id": 1,
+  "nome": "Notebook",
+  "quantidade": 10
+}
+
+
+$ curl -s -w '\nHTTP %{http_code}\n' http://localhost:8081/produtos/99
+{"mensagem":"Produto inexistente"}
+HTTP 404
+
+
+# Endpoint 3, regra 1: produto existe e há quantidade suficiente -> reduz e retorna 200
+
+$ curl -s -w '\nHTTP %{http_code}\n' -X PUT http://localhost:8081/produtos/2/reservar -H 'Content-Type: application/json' -d '{"quantidade": 2}'
+{"id":2,"nome":"Mouse","quantidade":48}
+HTTP 200
+
+
+$ curl -s http://localhost:8081/produtos/2 | json
+{
+  "id": 2,
+  "nome": "Mouse",
+  "quantidade": 48
+}
+
+
+# Regra 2: quantidade maior que a disponível -> 409 e o estoque NÃO muda
+
+$ curl -s -w '\nHTTP %{http_code}\n' -X PUT http://localhost:8081/produtos/2/reservar -H 'Content-Type: application/json' -d '{"quantidade": 1000}'
+{"mensagem":"Estoque insuficiente"}
+HTTP 409
+
+
+$ curl -s http://localhost:8081/produtos/2 | json
+{
+  "id": 2,
+  "nome": "Mouse",
+  "quantidade": 48
+}
+
+
+# Regra 3: produto inexistente -> 404 e o estoque NÃO muda
+
+$ curl -s -w '\nHTTP %{http_code}\n' -X PUT http://localhost:8081/produtos/99/reservar -H 'Content-Type: application/json' -d '{"quantidade": 1}'
+{"mensagem":"Produto inexistente"}
+HTTP 404
+
+
+# Correção: quantidade negativa ou zero -> 400 (sem isso, -5 AUMENTARIA o estoque)
+
+$ curl -s -w '\nHTTP %{http_code}\n' -X PUT http://localhost:8081/produtos/2/reservar -H 'Content-Type: application/json' -d '{"quantidade": -5}'
+{"mensagem":"Quantidade deve ser um inteiro maior que zero"}
+HTTP 400
+
+
+$ curl -s http://localhost:8081/produtos/2 | json
+{
+  "id": 2,
+  "nome": "Mouse",
+  "quantidade": 48
+}
+
+
+# Devolvendo as 2 unidades reservadas acima, para não interferir nas próximas etapas
+
+$ curl -s -X PUT http://localhost:8081/reservas/a13f1779-84d9-4bdc-af9e-3de076e53c02/liberar | json
+{
+  "id": 1,
+  "correlationId": "a13f1779-84d9-4bdc-af9e-3de076e53c02",
+  "produtoId": 2,
+  "quantidade": 2,
+  "status": "LIBERADA",
+  "criadaEm": "2026-10-03T09:35:11.607823-03:00",
+  "liberadaEm": "2026-10-03T09:35:12.183623866-03:00"
+}
+
+
+$ curl -s http://localhost:8081/produtos/2 | json
+{
+  "id": 2,
+  "nome": "Mouse",
+  "quantidade": 50
+}
+
