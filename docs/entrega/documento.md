@@ -17,7 +17,6 @@
 6. Parte 5: Respostas às perguntas de todas as etapas
 7. Como executar
 8. Apêndice A: Código-fonte completo
-9. Apêndice B: Saídas completas dos experimentos
 
 # 1. Visão geral e decisões de projeto
 
@@ -70,7 +69,7 @@ Mensagens persistentes (`delivery_mode = 2`), filas duráveis, `correlation_id` 
 
 # 3. Parte 2: Código-fonte dos serviços
 
-O código completo está no **Apêndice A** e na pasta `microservices-lab` entregue junto com este documento.
+O código completo está no **Apêndice A**, na pasta `microservices-lab` entregue junto com este documento e no repositório https://github.com/AlanyLourenco/microservices-lab.
 
 ```
 microservices-lab/
@@ -328,7 +327,7 @@ O Pagamento publica `{"pedidoId", "status": "APROVADO" | "REJEITADO", "correlati
 
 # 7. Como executar
 
-Pré-requisitos: Docker Desktop (WSL 2) e, para os roteiros, Git Bash e Python.
+Pré-requisitos: Docker Desktop (WSL 2) e, para os roteiros, Git Bash e Python. As saídas completas de cada roteiro, já citadas nas respostas da Parte 5, estão na pasta `evidencias/`.
 
 ```bash
 cd microservices-lab
@@ -372,17 +371,3 @@ docker compose down -v                # remove contêineres e volumes
 ## A.4 Roteiros de experimento
 
 [[ARQUIVO: scripts/lib.sh]]
-
-# Apêndice B: Saídas completas dos experimentos
-
-As saídas abaixo foram geradas pelos roteiros da pasta `scripts/`, executados em sequência num ambiente recém-criado (`docker compose down -v` e depois `up`).
-
-[[EVID: etapa01-estoque.txt]]
-[[EVID: etapa03-integracao-consistencia.txt]]
-[[EVID: etapa04-compose-isolamento.txt]]
-[[EVID: etapa05-rabbitmq.txt]]
-[[EVID: etapa07-teste-funcional.txt]]
-[[EVID: etapa08-09-falha-recuperacao.txt]]
-[[EVID: etapa10-escalabilidade.txt]]
-[[EVID: etapa11-incidente-pedido-17.txt]]
-[[EVID: etapa12-atualizacao-status.txt]]
