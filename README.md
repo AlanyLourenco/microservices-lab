@@ -22,4 +22,4 @@ curl http://localhost:8081/produtos       # estoque
 | pagamento-service | (interna) | pagamento-db | consome pedido.criado, aprova ~80%, publica pagamento.processado |
 
 Para os experimentos de cada etapa, use `scripts/etapaXX-*.sh` (Git Bash). As saídas vão para `evidencias/`.
-O documento de entrega fica em `docs/entrega/`; para regenerá-lo, rode `python docs/entrega/gerar.py`.
+O documento de entrega fica em `docs/entrega/`.

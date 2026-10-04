@@ -4,7 +4,7 @@ target/
 *.jar
 *.war
 
-# Segredos e configuração local: nunca versionar
+# Configuração local e segredos
 .env
 .env.*
 *.local
@@ -18,11 +18,6 @@ application-local.properties
 *.keystore
 credentials*
 secrets*
-
-# Notas e configuração da máquina local (caminhos, hardware, ferramentas de IA)
-CLAUDE.md
-CLAUDE.local.md
-.claude/
 
 # IDEs e editores
 .idea/
@@ -38,7 +33,7 @@ CLAUDE.local.md
 Thumbs.db
 desktop.ini
 
-# Python (gerador do documento)
+# Python
 __pycache__/
 *.pyc
 .venv/
